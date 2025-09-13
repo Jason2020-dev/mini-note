@@ -5,55 +5,84 @@
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>手机记事本</title>
 <style>
+/* ===== 基础 ===== */
+*{box-sizing:border-box}
 body{display:flex;margin:0;height:100vh;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Helvetica,Arial,sans-serif}
-#drawer{width:220px;background:#111;color:#fff;overflow-y:auto;transition:transform .3s}
-#drawer.hide{transform:translateX(-220px)}
-#drawer h3{margin:0;padding:10px;font-size:16px;font-weight:400;border-bottom:1px solid #333}
+#topBar{position:fixed;top:6px;right:6px;z-index:101;display:flex;gap:6px}
+#topBar button{background:#007aff;color:#fff;border:none;padding:6px 10px;border-radius:4px}
+#toggle{position:fixed;top:6px;left:6px;z-index:101;background:#007aff;color:#fff;border:none;padding:6px 10px;border-radius:4px}
+
+/* ===== 编辑区 ===== */
+#main{flex:1;display:flex;flex-direction:column;padding-top:40px}
+textarea{flex:1;border:none;padding:15px;font-size:18px;resize:none;outline:none}
+
+/* ===== 抽屉 ===== */
+#drawer{position:fixed;top:0;left:0;width:80%;max-width:280px;height:80%;background:#111;color:#fff;overflow-y:auto;transform:translateX(-100%);transition:transform .3s;z-index:100;border-radius:0 8px 8px 0}
+#drawer.show{transform:translateX(0)}
+#drawer h3{margin:0;padding:10px;font-size:16px;border-bottom:1px solid #333}
 #docList{list-style:none;margin:0;padding:0}
 #docList li{padding:10px;cursor:pointer;display:flex;justify-content:space-between;align-items:center}
 #docList li.active{background:#007aff}
 #docList li span{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#docList li button{background:none;border:none;color:#ff3b30;font-size:18px;line-height:1;padding:0 6px}
-#toggle{position:fixed;top:6px;left:6px;z-index:10;background:#007aff;color:#fff;border:none;padding:6px 10px;border-radius:4px}
-/* === 顶部按钮组 === */
-#topBar{position:fixed;top:6px;right:6px;z-index:10;display:flex;gap:6px}
-#topBar button{background:#007aff;color:#fff;border:none;padding:6px 10px;border-radius:4px}
-textarea{flex:1;border:none;padding:15px;font-size:18px;resize:none;outline:none;margin-top:40px}
-#rename{display:none;position:fixed;top:6px;left:50%;transform:translateX(-50%);background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.25);border:1px solid #ccc;padding:4px 8px;font-size:16px;width:160px;border-radius:4px}
+#docList li button{background:none;border:none;color:#ff3b30;font-size:18px;padding:0 6px}
+#newDoc{width:100%;border:none;background:#007aff;color:#fff;padding:10px}
+
+/* ===== 遮罩层 ===== */
+#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:99}
+#overlay.show{display:block}
+
+/* ===== 电脑端：并排显示 ===== */
+@media (min-width:768px){
+  #main{padding-top:0;padding-left:290px}
+  #drawer{position:absolute;top:0;left:0;height:100%;max-width:280px;border-radius:0;transform:none!important}
+  #toggle,#overlay{display:none}
+}
+#rename{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border:1px solid #ccc;padding:6px 10px;font-size:16px;width:160px;border-radius:4px;z-index:200}
 </style>
 </head>
 <body>
-<button id="toggle">☰</button>
 
-<nav id="drawer" class="hide">
+<button id="toggle">☰</button>
+<div id="topBar"><button id="saveBtn">💾 导出</button></div>
+
+<!-- 遮罩 -->
+<div id="overlay"></div>
+
+<!-- 抽屉 -->
+<nav id="drawer">
   <h3>📒 笔记列表</h3>
   <ul id="docList"></ul>
-  <button id="newDoc" style="width:100%;border:none;background:#007aff;color:#fff;padding:10px">＋ 新建笔记</button>
+  <button id="newDoc">＋ 新建笔记</button>
 </nav>
 
-<!-- ① 导出按钮 -->
-<div id="topBar">
-  <button id="saveBtn">💾 导出</button>
+<!-- 主体 -->
+<div id="main">
+  <textarea id="txt" placeholder="开始输入…"></textarea>
 </div>
 
-<textarea id="txt" placeholder="开始输入…"></textarea>
 <input id="rename" type="text"/>
 
 <script>
-/* ===== 数据层 ===== */
+/* ===== 数据 ===== */
 const LS_KEY = 'notes_v1';
 let notes = JSON.parse(localStorage.getItem(LS_KEY)) || {curr:'默认笔记',data:{'默认笔记':''}};
 function saveNotes(){ localStorage.setItem(LS_KEY,JSON.stringify(notes)); }
 
-/* ===== UI 层 ===== */
+/* ===== 元素 ===== */
 const drawer = document.getElementById('drawer');
+const overlay = document.getElementById('overlay');
 const toggle = document.getElementById('toggle');
 const txt = document.getElementById('txt');
 const list = document.getElementById('docList');
 const renameBox = document.getElementById('rename');
 
-toggle.onclick = ()=> drawer.classList.toggle('hide');
+/* ===== 打开/关闭抽屉 ===== */
+function openDrawer(){ drawer.classList.add('show'); overlay.classList.add('show'); }
+function closeDrawer(){ drawer.classList.remove('show'); overlay.classList.remove('show'); }
+toggle.addEventListener('click',openDrawer);
+overlay.addEventListener('click',closeDrawer);
 
+/* ===== 列表渲染 ===== */
 function renderList(){
   list.innerHTML = '';
   for(const name in notes.data){
@@ -62,7 +91,7 @@ function renderList(){
     li.innerHTML = `<span>${name}</span><button title="删除">×</button>`;
     li.querySelector('span').ondblclick = e=>{e.stopPropagation();startRename(name);};
     li.querySelector('button').onclick = e=>{e.stopPropagation();delDoc(name);};
-    li.onclick = ()=>switchDoc(name);
+    li.onclick = ()=>{ switchDoc(name); closeDrawer(); };
     list.appendChild(li);
   }
 }
@@ -70,8 +99,7 @@ function switchDoc(name){
   notes.data[notes.curr] = txt.value;
   notes.curr = name;
   txt.value = notes.data[name] || '';
-  saveNotes();
-  renderList();
+  saveNotes(); renderList();
 }
 function newDoc(){
   let name = '笔记 ' + (Object.keys(notes.data).length+1);
@@ -101,20 +129,20 @@ function startRename(oldName){
     renameBox.style.display = 'none';
   };
 }
-document.getElementById('newDoc').onclick = newDoc;
+document.getElementById('newDoc').addEventListener('click',()=>{ newDoc(); closeDrawer(); });
 
-/* ===== ① 导出功能 ===== */
-document.getElementById('saveBtn').onclick = ()=>{
+/* ===== 导出 ===== */
+document.getElementById('saveBtn').addEventListener('click',()=>{
   const blob = new Blob([txt.value], {type:'text/plain;charset=utf-8'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = notes.curr + '_' + new Date().toLocaleString().replace(/[:/\s]/g,'-') + '.txt';
   a.click();
-};
+});
 
 /* ===== 初始化 ===== */
 txt.value = notes.data[notes.curr] || '';
-txt.oninput = ()=>{ notes.data[notes.curr]=txt.value; saveNotes(); };
+txt.addEventListener('input',()=>{ notes.data[notes.curr]=txt.value; saveNotes(); });
 renderList();
 </script>
 </body>

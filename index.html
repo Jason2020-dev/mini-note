@@ -1,21 +1,121 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>手机记事本</title>
-  <style>
-    html, body { height: 100%; margin: 0; }
-    textarea { width: 100%; height: 100%; border: 0; font-size: 18px; padding: 10px; }
-  </style>
-  <link rel="manifest" href="manifest.json" />
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>手机记事本</title>
+<style>
+body{display:flex;margin:0;height:100vh;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Helvetica,Arial,sans-serif}
+#drawer{width:220px;background:#111;color:#fff;overflow-y:auto;transition:transform .3s}
+#drawer.hide{transform:translateX(-220px)}
+#drawer h3{margin:0;padding:10px;font-size:16px;font-weight:400;border-bottom:1px solid #333}
+#docList{list-style:none;margin:0;padding:0}
+#docList li{padding:10px;cursor:pointer;display:flex;justify-content:space-between;align-items:center}
+#docList li.active{background:#007aff}
+#docList li span{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#docList li button{background:none;border:none;color:#ff3b30;font-size:18px;line-height:1;padding:0 6px}
+#toggle{position:fixed;top:6px;left:6px;z-index:10;background:#007aff;color:#fff;border:none;padding:6px 10px;border-radius:4px}
+/* === 顶部按钮组 === */
+#topBar{position:fixed;top:6px;right:6px;z-index:10;display:flex;gap:6px}
+#topBar button{background:#007aff;color:#fff;border:none;padding:6px 10px;border-radius:4px}
+textarea{flex:1;border:none;padding:15px;font-size:18px;resize:none;outline:none;margin-top:40px}
+#rename{display:none;position:fixed;top:6px;left:50%;transform:translateX(-50%);background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.25);border:1px solid #ccc;padding:4px 8px;font-size:16px;width:160px;border-radius:4px}
+</style>
 </head>
 <body>
-  <textarea id="txt" placeholder="开始输入…"></textarea>
-  <script>
-    const t = document.getElementById('txt');
-    t.value = localStorage.getItem('note') || '';
-    t.addEventListener('input', () => localStorage.setItem('note', t.value));
-  </script>
+<button id="toggle">☰</button>
+
+<nav id="drawer" class="hide">
+  <h3>📒 笔记列表</h3>
+  <ul id="docList"></ul>
+  <button id="newDoc" style="width:100%;border:none;background:#007aff;color:#fff;padding:10px">＋ 新建笔记</button>
+</nav>
+
+<!-- ① 导出按钮 -->
+<div id="topBar">
+  <button id="saveBtn">💾 导出</button>
+</div>
+
+<textarea id="txt" placeholder="开始输入…"></textarea>
+<input id="rename" type="text"/>
+
+<script>
+/* ===== 数据层 ===== */
+const LS_KEY = 'notes_v1';
+let notes = JSON.parse(localStorage.getItem(LS_KEY)) || {curr:'默认笔记',data:{'默认笔记':''}};
+function saveNotes(){ localStorage.setItem(LS_KEY,JSON.stringify(notes)); }
+
+/* ===== UI 层 ===== */
+const drawer = document.getElementById('drawer');
+const toggle = document.getElementById('toggle');
+const txt = document.getElementById('txt');
+const list = document.getElementById('docList');
+const renameBox = document.getElementById('rename');
+
+toggle.onclick = ()=> drawer.classList.toggle('hide');
+
+function renderList(){
+  list.innerHTML = '';
+  for(const name in notes.data){
+    const li = document.createElement('li');
+    if(name === notes.curr) li.classList.add('active');
+    li.innerHTML = `<span>${name}</span><button title="删除">×</button>`;
+    li.querySelector('span').ondblclick = e=>{e.stopPropagation();startRename(name);};
+    li.querySelector('button').onclick = e=>{e.stopPropagation();delDoc(name);};
+    li.onclick = ()=>switchDoc(name);
+    list.appendChild(li);
+  }
+}
+function switchDoc(name){
+  notes.data[notes.curr] = txt.value;
+  notes.curr = name;
+  txt.value = notes.data[name] || '';
+  saveNotes();
+  renderList();
+}
+function newDoc(){
+  let name = '笔记 ' + (Object.keys(notes.data).length+1);
+  notes.data[name] = '';
+  switchDoc(name);
+}
+function delDoc(name){
+  if(Object.keys(notes.data).length===1){ alert('至少保留一篇笔记'); return; }
+  if(!confirm(`删除「${name}」？`)) return;
+  delete notes.data[name];
+  switchDoc(Object.keys(notes.data)[0]);
+}
+function startRename(oldName){
+  renameBox.value = oldName;
+  renameBox.style.display = 'block';
+  renameBox.focus();
+  renameBox.select();
+  renameBox.onblur = renameBox.onkeydown = e=>{
+    if(e.type==='keydown' && e.key!=='Enter') return;
+    const n = renameBox.value.trim();
+    if(n && n!==oldName && !notes.data[n]){
+      notes.data[n] = notes.data[oldName];
+      delete notes.data[oldName];
+      notes.curr = n;
+      saveNotes(); renderList();
+    }
+    renameBox.style.display = 'none';
+  };
+}
+document.getElementById('newDoc').onclick = newDoc;
+
+/* ===== ① 导出功能 ===== */
+document.getElementById('saveBtn').onclick = ()=>{
+  const blob = new Blob([txt.value], {type:'text/plain;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = notes.curr + '_' + new Date().toLocaleString().replace(/[:/\s]/g,'-') + '.txt';
+  a.click();
+};
+
+/* ===== 初始化 ===== */
+txt.value = notes.data[notes.curr] || '';
+txt.oninput = ()=>{ notes.data[notes.curr]=txt.value; saveNotes(); };
+renderList();
+</script>
 </body>
 </html>

@@ -10,10 +10,10 @@ dependencies:
   flutter: { sdk: flutter }
   provider: ^6.1.2
   path_provider: ^2.1.4
-  share_plus: ^10.0.2
+  share_plus: ^12.0.0
   flutter_smart_dialog: ^4.9.8
   desktop_window: ^0.4.0     # 限制窗口大小
+  file_picker: ^10.3.3 # 确保添加了 file_picker 包
 
 flutter:
   uses-material-design: true
-  

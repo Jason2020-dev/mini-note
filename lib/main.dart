@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
@@ -5,7 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:desktop_window/desktop_window.dart';   // 新增
-
+import 'package:file_picker/file_picker.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -49,12 +50,23 @@ class App extends StatelessWidget {
 }
 
 /* ================= 数据 ================= */
-
-
 class _Doc {
   String name;
   String content;
-  _Doc(this.name, this.content);
+  String extension; // Add file extension property
+  _Doc(this.name, this.content, [this.extension = 'txt']);
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'content': content,
+        'extension': extension,
+      };
+
+  static _Doc fromJson(Map<String, dynamic> json) => _Doc(
+        json['name'],
+        json['content'],
+        json['extension'] ?? 'txt',
+      );
 }
 /* ================= 主页 ================= */
 class HomePage extends StatefulWidget {
@@ -64,7 +76,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  final List<_Doc> _docs = [_Doc('默认笔记', '')];
+  final List<_Doc> _docs = [];
   int _index = 0;
   final TextEditingController _ctrl = TextEditingController();
   final FocusNode _focus = FocusNode();
@@ -129,8 +141,11 @@ class _HomePageState extends State<HomePage> {
 
   /* -------- 另存为 / 导出 -------- */
   void _saveAs() async {
-    final ctrl = TextEditingController(text: '${doc.name}_副本');
-    final name = await showDialog<String>(
+    final dir = await getApplicationDocumentsDirectory();
+    final defaultPath = '${dir.path}/${doc.name}_副本.${doc.extension}';
+    final ctrl = TextEditingController(text: defaultPath);
+
+    final path = await showDialog<String>(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('另存为'),
@@ -141,20 +156,42 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
     );
-    if (name == null || name.isEmpty) return;
-    _save();
-    setState(() {
-      _docs.add(_Doc(name, doc.content));
-      _index = _docs.length - 1;
-    });
-    SmartDialog.showToast('已另存');
+
+    if (path == null || path.isEmpty) return;
+
+    try {
+      _save();
+      final file = File(path);
+      await file.writeAsString(doc.content);
+      SmartDialog.showToast('已另存到 $path');
+    } catch (e) {
+      SmartDialog.showToast('另存失败：$e');
+    }
+  }
+
+  void _changeExtension() async {
+    final ctrl = TextEditingController(text: doc.extension);
+    final ext = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('更改文件后缀'),
+        content: TextField(controller: ctrl, autofocus: true),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+          TextButton(onPressed: () => Navigator.pop(context, ctrl.text.trim()), child: const Text('确定')),
+        ],
+      ),
+    );
+    if (ext == null || ext.isEmpty) return;
+    setState(() => doc.extension = ext);
+    SmartDialog.showToast('后缀已更改');
   }
 
   void _exportFile() async {
     _save();
     try {
       final dir = await getApplicationDocumentsDirectory();
-      final file = File('${dir.path}/${doc.name}.txt');
+      final file = File('${dir.path}/${doc.name}.${doc.extension}');
       await file.writeAsString(doc.content);
       Share.shareXFiles([XFile(file.path)], text: '导出笔记：${doc.name}');
     } catch (e) {
@@ -169,7 +206,7 @@ class _HomePageState extends State<HomePage> {
       context: context,
       builder: (_) => ListView(
         children: _docs.map((d) => ListTile(
-              title: Text(d.name),
+              title: Text('${d.name}.${d.extension}'), // 显示文件名和后缀
               leading: Icon(Icons.insert_drive_file,
                   color: d == doc ? Theme.of(context).colorScheme.primary : null),
               onTap: () => Navigator.pop(context, _docs.indexOf(d)),
@@ -183,15 +220,62 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
+  void _loadDocs() async {
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File('${dir.path}/docs.json');
+    if (await file.exists()) {
+      final data = jsonDecode(await file.readAsString());
+      setState(() {
+        _docs.addAll((data as List).map((e) => _Doc.fromJson(e)));
+      });
+    }
+  }
+
+  void _saveDocs() async {
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File('${dir.path}/docs.json');
+    await file.writeAsString(jsonEncode(_docs));
+  }
+
+  void _openFile() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['txt', 'md', 'json'], // 限制可打开的文件类型
+      );
+      if (result == null || result.files.isEmpty) return;
+
+      final file = File(result.files.single.path!);
+      final content = await file.readAsString();
+      final name = file.uri.pathSegments.last.split('.').first;
+      final extension = file.uri.pathSegments.last.split('.').last;
+
+      setState(() {
+        _docs.add(_Doc(name, content, extension));
+        _index = _docs.length - 1;
+        _ctrl.text = content;
+      });
+
+      SmartDialog.showToast('已打开文件：${file.uri.pathSegments.last}');
+    } catch (e) {
+      SmartDialog.showToast('打开文件失败：$e');
+    }
+  }
+
   @override
   void initState() {
     super.initState();
+    _loadDocs(); // Load saved documents on app start
+    if (_docs.isEmpty) {
+      _docs.add(_Doc('默认笔记', ''));
+    }
     _ctrl.text = doc.content;
   }
 
   @override
   void dispose() {
     _save();
+    _saveDocs(); // Save documents on app close
     _ctrl.dispose();
     super.dispose();
   }
@@ -204,6 +288,7 @@ class _HomePageState extends State<HomePage> {
         actions: [
           IconButton(icon: const Icon(Icons.save), tooltip: '保存', onPressed: () {_save(); SmartDialog.showToast('已保存');}),
           IconButton(icon: const Icon(Icons.add), tooltip: '新建', onPressed: _new),
+          IconButton(icon: const Icon(Icons.folder_open), tooltip: '打开', onPressed: _openFile), // 添加“打开”按钮
           PopupMenuButton<String>(
             onSelected: (v) {
               switch (v) {
@@ -212,6 +297,7 @@ class _HomePageState extends State<HomePage> {
                 case 'delete': _delete(); break;
                 case 'export': _exportFile(); break;
                 case 'theme': context.read<ThemeModel>().toggle(); break;
+                case 'changeExtension': _changeExtension(); break;
               }
             },
             itemBuilder: (_) => [
@@ -220,6 +306,7 @@ class _HomePageState extends State<HomePage> {
               const PopupMenuItem(value: 'delete', child: Text('删除')),
               const PopupMenuItem(value: 'export', child: Text('导出分享')),
               const PopupMenuItem(value: 'theme', child: Text('切换主题')),
+              const PopupMenuItem(value: 'changeExtension', child: Text('更改文件后缀')), // Add menu item
             ],
           ),
         ],

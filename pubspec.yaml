@@ -1,0 +1,19 @@
+name: mini_note
+description: A minimalist offline note app.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.0.0          # ← 新增这行
+
+dependencies:
+  flutter: { sdk: flutter }
+  provider: ^6.1.2
+  path_provider: ^2.1.4
+  share_plus: ^10.0.2
+  flutter_smart_dialog: ^4.9.8
+  desktop_window: ^0.4.0     # 限制窗口大小
+
+flutter:
+  uses-material-design: true
+  
